@@ -57,6 +57,12 @@ char idlecolor[7] = "000000"; // idle
 int curs_choice = CURS_NONE;
 char *image_path = NULL;
 
+int command_key = 0;
+const int CMD_KEY_SHIFT = 1;
+const int CMD_KEY_CTRL = 2;
+const int CMD_KEY_ALT = 4;
+const int CMD_KEY_SUPER = 8;
+
 /* Time format */
 bool use24hour = false;
 
@@ -357,6 +363,26 @@ static bool skip_without_validation(void) {
     return false;
 }
 
+struct cmdlist {
+  int mods;
+  char *kname;
+  char *command;
+  struct cmdlist *next;
+};
+
+struct cmdlist *commands = NULL;
+
+static char* find_command(int mods, char *keyname) {
+  struct cmdlist *current = commands;
+  while (current) {
+    if (current->mods == mods && !strcasecmp(current->kname, keyname)) {
+      return current->command;
+    }
+    current = current->next;
+  }
+  return NULL;
+}
+
 /*
  * Handle key presses. Fixes state, then looks up the key symbol for the
  * given keycode, then looks up the key symbol (as UCS-2), converts it to
@@ -366,12 +392,22 @@ static bool skip_without_validation(void) {
 static void handle_key_press(xcb_key_press_event_t *event) {
     xkb_keysym_t ksym;
     char buffer[128];
+    char keyname[128];
     int n;
     bool ctrl;
+    bool alt;
+    bool super;
+    bool shift;
     bool composed = false;
+    int mods;
 
     ksym = xkb_state_key_get_one_sym(xkb_state, event->detail);
+    xkb_keysym_get_name(ksym, keyname, 128);
     ctrl = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_DEPRESSED);
+    alt = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_ALT, XKB_STATE_MODS_DEPRESSED);
+    super = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_DEPRESSED);
+    shift = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_DEPRESSED);
+    mods = (ctrl * CMD_KEY_CTRL) | (alt * CMD_KEY_ALT) | (super * CMD_KEY_SUPER) | (shift * CMD_KEY_SHIFT);
 
     /* The buffer will be null-terminated, so n >= 2 for 1 actual character. */
     memset(buffer, '\0', sizeof(buffer));
@@ -393,6 +429,12 @@ static void handle_key_press(xcb_key_press_event_t *event) {
                 xkb_compose_state_reset(xkb_compose_state);
                 return;
         }
+    }
+
+    if (mods & command_key) {
+      char* cmd = find_command(mods, keyname);
+      system(cmd);
+      return;
     }
 
     if (!composed) {
@@ -912,6 +954,59 @@ int parse_config() {
         fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
         return 1;
       }
+    } else if (!strcmp("cmdkey", key)) {
+      if (!strcmp("ctrl", val)) {
+        command_key = CMD_KEY_CTRL;
+      } else if (!strcmp("alt", val)) {
+        command_key = CMD_KEY_ALT;
+      } else if (!strcmp("super", val)) {
+        command_key = CMD_KEY_SUPER;
+      } else if (!strcmp("none", val)) {
+        command_key = 0;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("command", key) || !strcmp("command+", key)) {
+      if (strlen(key) == 7) {
+        commands = NULL;
+      }
+      char *keys;
+      char *key;
+      char *cmd;
+      int mod = 0;
+      xkb_keysym_t ksym;
+      keys = strtok(val, "=");
+      cmd = strtok(NULL, "");
+      key = strtok(keys, "+");
+      while (key) {
+        if (!strcmp("ctrl", key)) {
+          mod |= CMD_KEY_CTRL;
+        } else if (!strcmp("alt", key)) {
+          mod |= CMD_KEY_ALT;
+        } else if (!strcmp("super", key)) {
+          mod |= CMD_KEY_SUPER;
+        } else if (!strcmp("shift", key)) {
+          mod |= CMD_KEY_SHIFT;
+        } else {
+          ksym = xkb_keysym_from_name(key, 0);
+          if (ksym == XKB_KEY_NoSymbol) {
+            fprintf(stderr, "Unknown value: `%s` at line %d\n", key, lc);
+            return 1;
+          }
+          struct cmdlist *item = (struct cmdlist*) malloc(sizeof(struct cmdlist));
+          item->mods = mod;
+          item->kname = (char*) malloc((strlen(key)+1)*sizeof(char));
+          strcpy(item->kname, key);
+          item->command = (char*) malloc((strlen(cmd)+1)*sizeof(char));
+          strcpy(item->command, cmd);
+          item->next = commands;
+          commands = item;
+          break;
+        }
+        key = strtok(NULL, "+");
+      }
+      
     } else {
       fprintf(stderr, "Unknown key: `%s` at line %d\n", key, lc);
       return 1;
