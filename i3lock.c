@@ -28,6 +28,7 @@
 #include <xkbcommon/xkbcommon-x11.h>
 #include <cairo.h>
 #include <cairo/cairo-xcb.h>
+#include <wordexp.h>
 
 #include "i3lock.h"
 #include "xcb.h"
@@ -52,6 +53,9 @@ char color[7] = "ffffff"; // background
 char verifycolor[7] = "00ff00"; // verify
 char wrongcolor[7] = "ff0000"; // wrong
 char idlecolor[7] = "000000"; // idle
+
+int curs_choice = CURS_NONE;
+char *image_path = NULL;
 
 /* Time format */
 bool use24hour = false;
@@ -803,13 +807,125 @@ int verify_hex(char *arg, char *colortype, char *varname) {
     return 1;
 }
 
+int parse_config() {
+  char *linebuf = (char*) malloc(4096*sizeof(char));
+  wordexp_t exp_result;
+  wordexp("~/.config/i3lock.conf", &exp_result, 0);
+  FILE *config = fopen(exp_result.we_wordv[0], "r");
+  wordfree(&exp_result);
+  if (!config) {
+    warnx("Failed to open config file `~/.config/i3lock.conf`\n");
+    return 0;
+  }
+  for (int lc = 1; fgets(linebuf, 4096, config); ++lc) {
+    if (!strlen(linebuf) || linebuf[0] == '#') {
+      continue;
+    }
+    char *key = strtok(linebuf, "=");
+    char *val = strtok(NULL, ";");
+    if (key == NULL || val == NULL) {
+      fprintf(stderr, "Malformed line: `%s` at line %d\n", linebuf, lc);
+      return 1;
+    }
+    if (!strcmp("nofork", key)) {
+      if (!strcmp("true", val)) {
+        dont_fork = true;
+      } else if (!strcmp("false", val)) {
+        dont_fork = false;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("beep", key)) {
+      if (!strcmp("true", val)) {
+        dont_fork = true;
+      } else if (!strcmp("false", val)) {
+        dont_fork = false;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("color", key)) {
+      verify_hex(val, color, "color");
+    } else if (!strcmp("verify-color", key)) {
+      verify_hex(val, verifycolor, "verifycolor");
+    } else if (!strcmp("wrong-color", key)) {
+      verify_hex(val, wrongcolor, "wrongcolor");
+    } else if (!strcmp("idle-color", key)) {
+      verify_hex(val, idlecolor, "idlecolor");
+    } else if (!strcmp("pointer", key)) {
+      if (!strcmp("win", val)) {
+        curs_choice = CURS_WIN;
+      } else if (!strcmp("default", val)) {
+        curs_choice = CURS_DEFAULT;
+      } else if (!strcmp("none", val)) {
+        curs_choice = CURS_NONE;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("unlock-indicator", key)) {
+      if (!strcmp("true", val)) {
+        unlock_indicator = true;
+      } else if (!strcmp("false", val)) {
+        unlock_indicator = false;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("image", key)) {
+      image_path = strdup(val);
+    } else if (!strcmp("tiling", key)) {
+      if (!strcmp("true", val)) {
+        tile = true;
+      } else if (!strcmp("false", val)) {
+        tile = false;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("ignore-empty-password", key)) {
+      if (!strcmp("true", val)) {
+        ignore_empty_password = true;
+      } else if (!strcmp("false", val)) {
+        ignore_empty_password = false;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("show-failed-attempts", key)) {
+      if (!strcmp("true", val)) {
+        show_failed_attempts = true;
+      } else if (!strcmp("false", val)) {
+        show_failed_attempts = false;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else if (!strcmp("hourformat", key)) {
+      if (!strcmp("24", val)) {
+        use24hour = true;
+      } else if (!strcmp("12", val)) {
+        use24hour = false;
+      } else {
+        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        return 1;
+      }
+    } else {
+      fprintf(stderr, "Unknown key: `%s` at line %d\n", key, lc);
+      return 1;
+    }
+  }
+  fclose(config);
+  free(linebuf);
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
     struct passwd *pw;
     char *username;
-    char *image_path = NULL;
     int ret;
     struct pam_conv conv = {conv_callback, NULL};
-    int curs_choice = CURS_NONE;
     int o;
     int optind = 0;
     struct option longopts[] = {
@@ -839,7 +955,10 @@ int main(int argc, char *argv[]) {
     if ((username = pw->pw_name) == NULL)
         errx(EXIT_FAILURE, "pw->pw_name is NULL.\n");
 
-    char *optstring = "hvnbdc:o:w:l:p:ui:teI:f";
+    char *optstring = "hvnbdc:o:w:l:p:ui:teI:f4";
+
+    parse_config();
+    
     while ((o = getopt_long(argc, argv, optstring, longopts, &optind)) != -1) {
         switch (o) {
         case 'v':
@@ -998,8 +1117,11 @@ int main(int argc, char *argv[]) {
                                  (uint32_t[]){XCB_EVENT_MASK_STRUCTURE_NOTIFY});
 
     if (image_path) {
+        /* Expand filename */
+        wordexp_t exp_result;
+        wordexp(image_path, &exp_result, 0);
         /* Create a pixmap to render on, fill it with the background color */
-        img = cairo_image_surface_create_from_png(image_path);
+        img = cairo_image_surface_create_from_png(exp_result.we_wordv[0]);
         /* In case loading failed, we just pretend no -i was specified. */
         if (cairo_surface_status(img) != CAIRO_STATUS_SUCCESS) {
             fprintf(stderr, "Could not load image \"%s\": %s\n",
@@ -1007,6 +1129,7 @@ int main(int argc, char *argv[]) {
             img = NULL;
         }
         free(image_path);
+        wordfree(&exp_result);
     }
 
     /* Pixmap on which the image is rendered to (if any) */
