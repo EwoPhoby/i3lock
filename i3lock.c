@@ -818,9 +818,10 @@ int parse_config() {
     return 0;
   }
   for (int lc = 1; fgets(linebuf, 4096, config); ++lc) {
-    if (!strlen(linebuf) || linebuf[0] == '#') {
+    if (strlen(linebuf) <= 1 || linebuf[0] == '#') {
       continue;
     }
+    linebuf[strlen(linebuf)-1] = '\0';
     char *key = strtok(linebuf, "=");
     char *val = strtok(NULL, ";");
     if (key == NULL || val == NULL) {
@@ -957,7 +958,9 @@ int main(int argc, char *argv[]) {
 
     char *optstring = "hvnbdc:o:w:l:p:ui:teI:f4";
 
-    parse_config();
+    if (parse_config()) {
+      return -1;
+    }
     
     while ((o = getopt_long(argc, argv, optstring, longopts, &optind)) != -1) {
         switch (o) {
