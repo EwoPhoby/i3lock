@@ -29,6 +29,7 @@
 #include <cairo.h>
 #include <cairo/cairo-xcb.h>
 #include <wordexp.h>
+#include <errno.h>
 
 #include "i3lock.h"
 #include "xcb.h"
@@ -57,7 +58,6 @@ char idlecolor[7] = "000000"; // idle
 int curs_choice = CURS_NONE;
 char *image_path = NULL;
 
-int command_key = 0;
 const int CMD_KEY_SHIFT = 1;
 const int CMD_KEY_CTRL = 2;
 const int CMD_KEY_ALT = 4;
@@ -365,22 +365,32 @@ static bool skip_without_validation(void) {
 
 struct cmdlist {
   int mods;
-  char *kname;
+  xkb_keysym_t ksym;
   char *command;
   struct cmdlist *next;
 };
 
 struct cmdlist *commands = NULL;
 
-static char* find_command(int mods, char *keyname) {
+static char* find_command(int mods, xkb_keysym_t ksym) {
   struct cmdlist *current = commands;
   while (current) {
-    if (current->mods == mods && !strcasecmp(current->kname, keyname)) {
+    if (current->mods == mods && current->ksym == ksym) {
       return current->command;
     }
     current = current->next;
   }
   return NULL;
+}
+
+static void delete_commands() {
+  struct cmdlist *next = NULL;
+  while (commands) {
+    free(commands->command);
+    next = commands->next;
+    free(commands);
+    commands = next;
+  }
 }
 
 /*
@@ -390,7 +400,7 @@ static char* find_command(int mods, char *keyname) {
  *
  */
 static void handle_key_press(xcb_key_press_event_t *event) {
-    xkb_keysym_t ksym;
+    xkb_keysym_t ksym, real_ksym;
     char buffer[128];
     char keyname[128];
     int n;
@@ -403,6 +413,7 @@ static void handle_key_press(xcb_key_press_event_t *event) {
 
     ksym = xkb_state_key_get_one_sym(xkb_state, event->detail);
     xkb_keysym_get_name(ksym, keyname, 128);
+    real_ksym = xkb_keysym_from_name(keyname, 0);
     ctrl = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_DEPRESSED);
     alt = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_ALT, XKB_STATE_MODS_DEPRESSED);
     super = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_DEPRESSED);
@@ -430,10 +441,13 @@ static void handle_key_press(xcb_key_press_event_t *event) {
                 return;
         }
     }
-
-    if (mods & command_key) {
-      char* cmd = find_command(mods, keyname);
-      system(cmd);
+    
+    char* cmd = find_command(mods, real_ksym);
+    if (cmd) {
+      if (!fork()) {
+        system(cmd);
+        exit(0);
+      }
       return;
     }
 
@@ -849,14 +863,18 @@ int verify_hex(char *arg, char *colortype, char *varname) {
     return 1;
 }
 
-int parse_config() {
+int parse_config(char *filename) {
   char *linebuf = (char*) malloc(4096*sizeof(char));
   wordexp_t exp_result;
-  wordexp("~/.config/i3lock.conf", &exp_result, 0);
+  wordexp(filename, &exp_result, 0);
+  errno = 0;
   FILE *config = fopen(exp_result.we_wordv[0], "r");
   wordfree(&exp_result);
   if (!config) {
-    warnx("Failed to open config file `~/.config/i3lock.conf`\n");
+    if (errno == ENOENT) {
+      return 0;
+    }
+    warnx("Failed to open config file `%s`", filename);
     return 0;
   }
   for (int lc = 1; fgets(linebuf, 4096, config); ++lc) {
@@ -867,7 +885,7 @@ int parse_config() {
     char *key = strtok(linebuf, "=");
     char *val = strtok(NULL, ";");
     if (key == NULL || val == NULL) {
-      fprintf(stderr, "Malformed line: `%s` at line %d\n", linebuf, lc);
+      fprintf(stderr, "Malformed line: `%s` at %s:%d\n", linebuf, filename, lc);
       return 1;
     }
     if (!strcmp("nofork", key)) {
@@ -876,7 +894,7 @@ int parse_config() {
       } else if (!strcmp("false", val)) {
         dont_fork = false;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("beep", key)) {
@@ -885,7 +903,7 @@ int parse_config() {
       } else if (!strcmp("false", val)) {
         dont_fork = false;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("color", key)) {
@@ -904,7 +922,7 @@ int parse_config() {
       } else if (!strcmp("none", val)) {
         curs_choice = CURS_NONE;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("unlock-indicator", key)) {
@@ -913,7 +931,7 @@ int parse_config() {
       } else if (!strcmp("false", val)) {
         unlock_indicator = false;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("image", key)) {
@@ -924,7 +942,7 @@ int parse_config() {
       } else if (!strcmp("false", val)) {
         tile = false;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("ignore-empty-password", key)) {
@@ -933,7 +951,7 @@ int parse_config() {
       } else if (!strcmp("false", val)) {
         ignore_empty_password = false;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("show-failed-attempts", key)) {
@@ -942,7 +960,7 @@ int parse_config() {
       } else if (!strcmp("false", val)) {
         show_failed_attempts = false;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("hourformat", key)) {
@@ -951,25 +969,12 @@ int parse_config() {
       } else if (!strcmp("12", val)) {
         use24hour = false;
       } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
-        return 1;
-      }
-    } else if (!strcmp("cmdkey", key)) {
-      if (!strcmp("ctrl", val)) {
-        command_key = CMD_KEY_CTRL;
-      } else if (!strcmp("alt", val)) {
-        command_key = CMD_KEY_ALT;
-      } else if (!strcmp("super", val)) {
-        command_key = CMD_KEY_SUPER;
-      } else if (!strcmp("none", val)) {
-        command_key = 0;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at line %d\n", val, lc);
+        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
         return 1;
       }
     } else if (!strcmp("command", key) || !strcmp("command+", key)) {
       if (strlen(key) == 7) {
-        commands = NULL;
+        delete_commands();
       }
       char *keys;
       char *key;
@@ -991,13 +996,12 @@ int parse_config() {
         } else {
           ksym = xkb_keysym_from_name(key, 0);
           if (ksym == XKB_KEY_NoSymbol) {
-            fprintf(stderr, "Unknown value: `%s` at line %d\n", key, lc);
+            fprintf(stderr, "Unknown value: `%s` at %s:%d\n", key, filename, lc);
             return 1;
           }
           struct cmdlist *item = (struct cmdlist*) malloc(sizeof(struct cmdlist));
           item->mods = mod;
-          item->kname = (char*) malloc((strlen(key)+1)*sizeof(char));
-          strcpy(item->kname, key);
+          item->ksym = ksym;
           item->command = (char*) malloc((strlen(cmd)+1)*sizeof(char));
           strcpy(item->command, cmd);
           item->next = commands;
@@ -1008,7 +1012,7 @@ int parse_config() {
       }
       
     } else {
-      fprintf(stderr, "Unknown key: `%s` at line %d\n", key, lc);
+      fprintf(stderr, "Unknown key: `%s` at %s:%d\n", key, filename, lc);
       return 1;
     }
   }
@@ -1053,7 +1057,13 @@ int main(int argc, char *argv[]) {
 
     char *optstring = "hvnbdc:o:w:l:p:ui:teI:f4";
 
-    if (parse_config()) {
+    if (parse_config("/etc/i3lock.conf")) {
+      return -1;
+    }
+    if (parse_config("~/.i3lock.conf")) {
+      return -1;
+    }
+    if (parse_config("~/.config/i3lock.conf")) {
       return -1;
     }
     
