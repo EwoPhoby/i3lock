@@ -268,7 +268,7 @@ static void input_done(void) {
         pam_setcred(pam_handle, PAM_REFRESH_CRED);
         pam_end(pam_handle, PAM_SUCCESS);
 
-        exit(0);
+        exit(EXIT_SUCCESS);
     }
 
     if (debug_mode)
@@ -410,7 +410,7 @@ static void handle_key_press(xcb_key_press_event_t *event) {
     if (cmd) {
       if (!fork()) {
         system(cmd);
-        exit(0);
+        exit(EXIT_SUCCESS);
       }
       return;
     }
@@ -737,7 +737,7 @@ static void xcb_check_cb(EV_P_ ev_check *w, int revents) {
 
                     /* In the parent process, we exit */
                     if (fork() != 0)
-                        exit(0);
+                        exit(EXIT_SUCCESS);
 
                     ev_loop_fork(EV_DEFAULT);
                 }
