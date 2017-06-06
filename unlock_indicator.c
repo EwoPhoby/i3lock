@@ -18,6 +18,7 @@
 #include <time.h>
 
 #include "i3lock.h"
+#include "i3lock_config.h"
 #include "xcb.h"
 #include "unlock_indicator.h"
 #include "xinerama.h"
@@ -36,6 +37,8 @@ static struct ev_periodic *time_redraw_tick;
 
 extern bool debug_mode;
 
+extern struct config configuration;
+
 /* The current position in the input buffer. Useful to determine if any
  * characters of the password have already been entered or not. 
  */
@@ -47,35 +50,11 @@ extern xcb_window_t win;
 /* The current resolution of the X11 root window. */
 extern uint32_t last_resolution[2];
 
-/* Whether the unlock indicator is enabled (defaults to true). */
-extern bool unlock_indicator;
-
 /* List of pressed modifiers, or NULL if none are pressed. */
 extern char *modifier_string;
 
 /* A Cairo surface containing the specified image (-i), if any. */
 extern cairo_surface_t *img;
-
-/* Whether the image should be tiled. */
-extern bool tile;
-
-/* The background color to use (in hex). */
-extern char color[7];
-
-/* Verify color to use (in hex). */
-extern char verifycolor[7];
-
-/* Wrong/Error color to use (in hex). */
-extern char wrongcolor[7];
-
-/* Idle color to use (in hex). */
-extern char idlecolor[7];
-
-/* Use 24 hour time format */
-extern bool use24hour;
-
-/* Whether the failed attempts should be displayed. */
-extern bool show_failed_attempts;
 
 /* Number of failed unlock attempts. */
 extern int failed_attempts;
@@ -122,7 +101,7 @@ xcb_pixmap_t draw_image(uint32_t *resolution) {
 
     if (!vistype)
         vistype = get_root_visual_type(screen);
-    bg_pixmap = create_bg_pixmap(conn, screen, resolution, color);
+    bg_pixmap = create_bg_pixmap(conn, screen, resolution, configuration.color);
     /* 
      * Initialize cairo: Create one in-memory surface to render the unlock
      * indicator on, create one XCB surface to actually draw (one or more,
@@ -175,7 +154,7 @@ xcb_pixmap_t draw_image(uint32_t *resolution) {
     }
 
     if (img) {
-        if (!tile) {
+        if (!configuration.tiling) {
             cairo_set_source_surface(xcb_ctx, img, 0, 0);
             cairo_paint(xcb_ctx);
         } else {
@@ -189,12 +168,12 @@ xcb_pixmap_t draw_image(uint32_t *resolution) {
             cairo_pattern_destroy(pattern);
         }
     } else {
-        set_color(xcb_ctx,color,'b'); /* If not image, use color to fill background */
+        set_color(xcb_ctx,configuration.color,'b'); /* If not image, use color to fill background */
         cairo_rectangle(xcb_ctx, 0, 0, resolution[0], resolution[1]);
         cairo_fill(xcb_ctx);
     }
 
-    if (unlock_indicator) {
+    if (configuration.unlock_indicator) {
         cairo_scale(ctx, scaling_factor(), scaling_factor());
         /* Draw a (centered) circle with transparent background. */
         cairo_set_line_width(ctx, 3.0);
@@ -212,22 +191,22 @@ xcb_pixmap_t draw_image(uint32_t *resolution) {
         void set_pam_color(char colortype) {
             switch (pam_state) {
                 case STATE_PAM_LOCK:
-                    set_color(ctx,idlecolor,colortype);
+                    set_color(ctx,configuration.idlecolor,colortype);
                 case STATE_PAM_VERIFY:
-                    set_color(ctx,verifycolor,colortype);
+                    set_color(ctx,configuration.verifycolor,colortype);
                     break;
                 case STATE_PAM_WRONG:
-                    set_color(ctx,wrongcolor,colortype);
+                    set_color(ctx,configuration.wrongcolor,colortype);
                     break;
                 case STATE_I3LOCK_LOCK_FAILED:
-                    set_color(ctx,wrongcolor,colortype);
+                    set_color(ctx,configuration.wrongcolor,colortype);
                     break;
                 case STATE_PAM_IDLE:
                     if (unlock_state == STATE_BACKSPACE_ACTIVE) {
-                        set_color(ctx,wrongcolor,colortype);
+                        set_color(ctx,configuration.wrongcolor,colortype);
                     }
                     else {
-                        set_color(ctx,idlecolor,colortype);  
+                        set_color(ctx,configuration.idlecolor,colortype);
                     }
                     break;
             }
@@ -245,7 +224,7 @@ xcb_pixmap_t draw_image(uint32_t *resolution) {
 
         time_t curtime = time(NULL);
         struct tm *tm = localtime(&curtime);
-        if (use24hour)
+        if (configuration.use24hour)
             strftime(timetext, 100, TIME_FORMAT_24, tm);
         else
             strftime(timetext, 100, TIME_FORMAT_12, tm);

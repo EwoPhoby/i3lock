@@ -28,14 +28,15 @@
 #include <xkbcommon/xkbcommon-x11.h>
 #include <cairo.h>
 #include <cairo/cairo-xcb.h>
-#include <wordexp.h>
 #include <errno.h>
 
 #include "i3lock.h"
+#include "i3lock_config.h"
 #include "xcb.h"
 #include "cursors.h"
 #include "unlock_indicator.h"
 #include "xinerama.h"
+#include "util.h"
 
 #define TSTAMP_N_SECS(n) (n * 1.0)
 #define TSTAMP_N_MINS(n) (60 * TSTAMP_N_SECS(n))
@@ -47,25 +48,14 @@
 typedef void (*ev_callback_t)(EV_P_ ev_timer *w, int revents);
 static void input_done(void);
 
-/* We need this for libxkbfile */
+extern const int CMD_KEY_SHIFT;
+extern const int CMD_KEY_CTRL;
+extern const int CMD_KEY_ALT;
+extern const int CMD_KEY_SUPER;
 
-/* Color options */
-char color[7] = "ffffff"; // background
-char verifycolor[7] = "00ff00"; // verify
-char wrongcolor[7] = "ff0000"; // wrong
-char idlecolor[7] = "000000"; // idle
+extern struct config configuration;
 
-int curs_choice = CURS_NONE;
-char *image_path = NULL;
-
-const int CMD_KEY_SHIFT = 1;
-const int CMD_KEY_CTRL = 2;
-const int CMD_KEY_ALT = 4;
-const int CMD_KEY_SUPER = 8;
-
-/* Time format */
-bool use24hour = false;
-
+bool skip_repeated_empty_password = true;
 int inactivity_timeout = 30;
 uint32_t last_resolution[2];
 xcb_window_t win;
@@ -74,11 +64,8 @@ static pam_handle_t *pam_handle;
 int input_position = 0;
 /* Holds the password you enter (in UTF-8). */
 static char password[512];
-static bool beep = false;
 bool debug_mode = false;
-bool unlock_indicator = true;
 char *modifier_string = NULL;
-static bool dont_fork = false;
 struct ev_loop *main_loop;
 static struct ev_timer *clear_pam_wrong_timeout;
 static struct ev_timer *clear_indicator_timeout;
@@ -86,7 +73,6 @@ static struct ev_timer *discard_passwd_timeout;
 extern unlock_state_t unlock_state;
 extern pam_state_t pam_state;
 int failed_attempts = 0;
-bool show_failed_attempts = false;
 bool retry_verification = false;
 
 static struct xkb_state *xkb_state;
@@ -98,9 +84,6 @@ static uint8_t xkb_base_event;
 static uint8_t xkb_base_error;
 
 cairo_surface_t *img = NULL;
-bool tile = false;
-bool ignore_empty_password = false;
-bool skip_repeated_empty_password = false;
 
 /* isutf, u8_dec © 2005 Jeff Bezanson, public domain */
 #define isutf(c) (((c)&0xC0) != 0x80)
@@ -187,7 +170,7 @@ static void clear_password_memory(void) {
          * index plus (!) the value of the beep variable. This prevents the
          * compiler from optimizing the calls away, since the value of 'beep'
          * is not known at compile-time. */
-        vpassword[c] = c + (int)beep;
+        vpassword[c] = c + (int)(configuration.beep);
 }
 
 ev_timer *start_timer(ev_timer *timer_obj, ev_tstamp timeout, ev_callback_t callback) {
@@ -329,7 +312,7 @@ static void input_done(void) {
     pam_state = STATE_PAM_WRONG;
     failed_attempts += 1;
     clear_input();
-    if (unlock_indicator)
+    if (configuration.unlock_indicator)
         redraw_screen();
 
     /* Clear this state after 2 seconds (unless the user enters another
@@ -342,7 +325,7 @@ static void input_done(void) {
     STOP_TIMER(clear_indicator_timeout);
 
     /* beep on authentication failure, if enabled */
-    if (beep) {
+    if (configuration.beep) {
         xcb_bell(conn, 100);
         xcb_flush(conn);
     }
@@ -357,23 +340,14 @@ static bool skip_without_validation(void) {
     if (input_position != 0)
         return false;
 
-    if (skip_repeated_empty_password || ignore_empty_password)
+    if (skip_repeated_empty_password || configuration.ignore_empty_password)
         return true;
 
     return false;
 }
 
-struct cmdlist {
-  int mods;
-  xkb_keysym_t ksym;
-  char *command;
-  struct cmdlist *next;
-};
-
-struct cmdlist *commands = NULL;
-
 static char* find_command(int mods, xkb_keysym_t ksym) {
-  struct cmdlist *current = commands;
+  struct cmdlist *current = configuration.commands;
   while (current) {
     if (current->mods == mods && current->ksym == ksym) {
       return current->command;
@@ -381,16 +355,6 @@ static char* find_command(int mods, xkb_keysym_t ksym) {
     current = current->next;
   }
   return NULL;
-}
-
-static void delete_commands() {
-  struct cmdlist *next = NULL;
-  while (commands) {
-    free(commands->command);
-    next = commands->next;
-    free(commands);
-    commands = next;
-  }
 }
 
 /*
@@ -488,7 +452,7 @@ static void handle_key_press(xcb_key_press_event_t *event) {
                 clear_input();
                 /* Hide the unlock indicator after a bit if the password buffer is
                  * empty. */
-                if (unlock_indicator) {
+                if (configuration.unlock_indicator) {
                     START_TIMER(clear_indicator_timeout, 1.0, clear_indicator_cb);
                     unlock_state = STATE_BACKSPACE_ACTIVE;
                     redraw_screen();
@@ -549,7 +513,7 @@ static void handle_key_press(xcb_key_press_event_t *event) {
     input_position += n - 1;
     DEBUG("current password = %.*s\n", input_position, password);
 
-    if (unlock_indicator) {
+    if (configuration.unlock_indicator) {
         unlock_state = STATE_KEY_ACTIVE;
         redraw_screen();
         unlock_state = STATE_KEY_PRESSED;
@@ -766,10 +730,10 @@ static void xcb_check_cb(EV_P_ ev_check *w, int revents) {
 
             case XCB_MAP_NOTIFY:
                 maybe_close_sleep_lock_fd();
-                if (!dont_fork) {
+                if (!configuration.dont_fork) {
                     /* After the first MapNotify, we never fork again. We don’t
                      * expect to get another MapNotify, but better be sure… */
-                    dont_fork = true;
+                    configuration.dont_fork = true;
 
                     /* In the parent process, we exit */
                     if (fork() != 0)
@@ -848,179 +812,6 @@ static void raise_loop(xcb_window_t window) {
     }
 }
 
-int verify_hex(char *arg, char *colortype, char *varname) {
-    /* Skip # if present */
-    if (arg[0] == '#') {
-        arg++;  
-    }
-        
-    if (strlen(arg) != 6 || sscanf(arg, "%06[0-9a-fA-F]", colortype) != 1) {
-        errx(EXIT_FAILURE, "%s is invalid, it must be given in 3-byte hexadecimal format: rrggbb\n", varname);
-
-        return 0;
-    }
-        
-    return 1;
-}
-
-int parse_config(char *filename) {
-  char *linebuf = (char*) malloc(4096*sizeof(char));
-  wordexp_t exp_result;
-  wordexp(filename, &exp_result, 0);
-  errno = 0;
-  FILE *config = fopen(exp_result.we_wordv[0], "r");
-  wordfree(&exp_result);
-  if (!config) {
-    if (errno == ENOENT) {
-      return 0;
-    }
-    warnx("Failed to open config file `%s`", filename);
-    return 0;
-  }
-  for (int lc = 1; fgets(linebuf, 4096, config); ++lc) {
-    if (strlen(linebuf) <= 1 || linebuf[0] == '#') {
-      continue;
-    }
-    linebuf[strlen(linebuf)-1] = '\0';
-    char *key = strtok(linebuf, "=");
-    char *val = strtok(NULL, ";");
-    if (key == NULL || val == NULL) {
-      fprintf(stderr, "Malformed line: `%s` at %s:%d\n", linebuf, filename, lc);
-      return 1;
-    }
-    if (!strcmp("nofork", key)) {
-      if (!strcmp("true", val)) {
-        dont_fork = true;
-      } else if (!strcmp("false", val)) {
-        dont_fork = false;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("beep", key)) {
-      if (!strcmp("true", val)) {
-        dont_fork = true;
-      } else if (!strcmp("false", val)) {
-        dont_fork = false;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("color", key)) {
-      verify_hex(val, color, "color");
-    } else if (!strcmp("verify-color", key)) {
-      verify_hex(val, verifycolor, "verifycolor");
-    } else if (!strcmp("wrong-color", key)) {
-      verify_hex(val, wrongcolor, "wrongcolor");
-    } else if (!strcmp("idle-color", key)) {
-      verify_hex(val, idlecolor, "idlecolor");
-    } else if (!strcmp("pointer", key)) {
-      if (!strcmp("win", val)) {
-        curs_choice = CURS_WIN;
-      } else if (!strcmp("default", val)) {
-        curs_choice = CURS_DEFAULT;
-      } else if (!strcmp("none", val)) {
-        curs_choice = CURS_NONE;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("unlock-indicator", key)) {
-      if (!strcmp("true", val)) {
-        unlock_indicator = true;
-      } else if (!strcmp("false", val)) {
-        unlock_indicator = false;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("image", key)) {
-      image_path = strdup(val);
-    } else if (!strcmp("tiling", key)) {
-      if (!strcmp("true", val)) {
-        tile = true;
-      } else if (!strcmp("false", val)) {
-        tile = false;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("ignore-empty-password", key)) {
-      if (!strcmp("true", val)) {
-        ignore_empty_password = true;
-      } else if (!strcmp("false", val)) {
-        ignore_empty_password = false;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("show-failed-attempts", key)) {
-      if (!strcmp("true", val)) {
-        show_failed_attempts = true;
-      } else if (!strcmp("false", val)) {
-        show_failed_attempts = false;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("hourformat", key)) {
-      if (!strcmp("24", val)) {
-        use24hour = true;
-      } else if (!strcmp("12", val)) {
-        use24hour = false;
-      } else {
-        fprintf(stderr, "Unknown value: `%s` at %s:%d\n", val, filename, lc);
-        return 1;
-      }
-    } else if (!strcmp("command", key) || !strcmp("command+", key)) {
-      if (strlen(key) == 7) {
-        delete_commands();
-      }
-      char *keys;
-      char *key;
-      char *cmd;
-      int mod = 0;
-      xkb_keysym_t ksym;
-      keys = strtok(val, "=");
-      cmd = strtok(NULL, "");
-      key = strtok(keys, "+");
-      while (key) {
-        if (!strcmp("ctrl", key)) {
-          mod |= CMD_KEY_CTRL;
-        } else if (!strcmp("alt", key)) {
-          mod |= CMD_KEY_ALT;
-        } else if (!strcmp("super", key)) {
-          mod |= CMD_KEY_SUPER;
-        } else if (!strcmp("shift", key)) {
-          mod |= CMD_KEY_SHIFT;
-        } else {
-          ksym = xkb_keysym_from_name(key, 0);
-          if (ksym == XKB_KEY_NoSymbol) {
-            fprintf(stderr, "Unknown value: `%s` at %s:%d\n", key, filename, lc);
-            return 1;
-          }
-          struct cmdlist *item = (struct cmdlist*) malloc(sizeof(struct cmdlist));
-          item->mods = mod;
-          item->ksym = ksym;
-          item->command = (char*) malloc((strlen(cmd)+1)*sizeof(char));
-          strcpy(item->command, cmd);
-          item->next = commands;
-          commands = item;
-          break;
-        }
-        key = strtok(NULL, "+");
-      }
-      
-    } else {
-      fprintf(stderr, "Unknown key: `%s` at %s:%d\n", key, filename, lc);
-      return 1;
-    }
-  }
-  fclose(config);
-  free(linebuf);
-  return 0;
-}
-
 int main(int argc, char *argv[]) {
     struct passwd *pw;
     char *username;
@@ -1047,6 +838,7 @@ int main(int argc, char *argv[]) {
         {"wrong-color", required_argument, NULL, 'w'},
         {"idle-color", required_argument, NULL, 'l'},
         {"24", no_argument, NULL, '4'},
+        {"config", required_argument, NULL, 'C'},
         {NULL, no_argument, NULL, 0}
     };
 
@@ -1055,9 +847,9 @@ int main(int argc, char *argv[]) {
     if ((username = pw->pw_name) == NULL)
         errx(EXIT_FAILURE, "pw->pw_name is NULL.\n");
 
-    char *optstring = "hvnbdc:o:w:l:p:ui:teI:f4";
+    char *optstring = "hvnbdc:o:w:l:p:ui:teI:f4C:";
 
-    if (parse_config("/etc/i3lock.conf")) {
+    /*if (parse_config("/etc/i3lock.conf")) {
       return -1;
     }
     if (parse_config("~/.i3lock.conf")) {
@@ -1065,17 +857,17 @@ int main(int argc, char *argv[]) {
     }
     if (parse_config("~/.config/i3lock.conf")) {
       return -1;
-    }
+    }*/
     
     while ((o = getopt_long(argc, argv, optstring, longopts, &optind)) != -1) {
         switch (o) {
         case 'v':
             errx(EXIT_SUCCESS, "version " VERSION " © 2010 Michael Stapelberg");
         case 'n':
-            dont_fork = true;
+            configuration.dont_fork = true;
             break;
         case 'b':
-            beep = true;
+            configuration.beep = true;
             break;
         case 'd':
             fprintf(stderr, "DPMS support has been removed from i3lock. Please see the manpage i3lock(1).\n");
@@ -1085,47 +877,50 @@ int main(int argc, char *argv[]) {
             break;
         }
         case 'c': 
-            verify_hex(optarg,color, "color");
+            verify_hex(optarg, configuration.color, "color");
             break;
         case 'o':
-            verify_hex(optarg,verifycolor, "verifycolor");
+            verify_hex(optarg, configuration.verifycolor, "verifycolor");
             break;
         case 'w':
-            verify_hex(optarg,wrongcolor, "wrongcolor");
+            verify_hex(optarg, configuration.wrongcolor, "wrongcolor");
             break;
         case 'l':
-            verify_hex(optarg,idlecolor, "idlecolor");
+            verify_hex(optarg, configuration.idlecolor, "idlecolor");
             break;
         case '4':
-            use24hour = true;
+            configuration.use24hour = true;
             break;
         case 'u':
-            unlock_indicator = false;
+            configuration.unlock_indicator = false;
             break;
         case 'i':
-            image_path = strdup(optarg);
+            configuration.image_path = strdup(optarg);
             break;
         case 't':
-            tile = true;
+            configuration.tiling = true;
             break;
         case 'p':
             if (!strcmp(optarg, "win")) {
-                curs_choice = CURS_WIN;
+                configuration.curs_choice = CURS_WIN;
             } else if (!strcmp(optarg, "default")) {
-                curs_choice = CURS_DEFAULT;
+                configuration.curs_choice = CURS_DEFAULT;
             } else {
                 errx(EXIT_FAILURE, "i3lock: Invalid pointer type given. Expected one of \"win\" or \"default\".\n");
             }
             break;
         case 'e':
-            ignore_empty_password = true;
+            configuration.ignore_empty_password = true;
             break;
         case 0:
             if (strcmp(longopts[optind].name, "debug") == 0)
                 debug_mode = true;
             break;
         case 'f':
-            show_failed_attempts = true;
+            configuration.show_failed_attempts = true;
+            break;
+        case 'C':
+            parse_config(optarg);
             break;
         default:
             errx(EXIT_FAILURE, "Syntax: i3lock [-v] [-n] [-b] [-d] [-c color] [-o color] [-w color] [-l color] [-u] [-p win|default]"
@@ -1224,30 +1019,28 @@ int main(int argc, char *argv[]) {
     xcb_change_window_attributes(conn, screen->root, XCB_CW_EVENT_MASK,
                                  (uint32_t[]){XCB_EVENT_MASK_STRUCTURE_NOTIFY});
 
-    if (image_path) {
-        /* Expand filename */
-        wordexp_t exp_result;
-        wordexp(image_path, &exp_result, 0);
+    if (configuration.image_path) {
+        /* filename */
+        char *exp_result = expand_path(configuration.image_path);
         /* Create a pixmap to render on, fill it with the background color */
-        img = cairo_image_surface_create_from_png(exp_result.we_wordv[0]);
+        img = cairo_image_surface_create_from_png(exp_result);
         /* In case loading failed, we just pretend no -i was specified. */
         if (cairo_surface_status(img) != CAIRO_STATUS_SUCCESS) {
             fprintf(stderr, "Could not load image \"%s\": %s\n",
-                    image_path, cairo_status_to_string(cairo_surface_status(img)));
+                    configuration.image_path, cairo_status_to_string(cairo_surface_status(img)));
             img = NULL;
         }
-        free(image_path);
-        wordfree(&exp_result);
+        free(exp_result);
     }
 
     /* Pixmap on which the image is rendered to (if any) */
     xcb_pixmap_t bg_pixmap = draw_image(last_resolution);
 
     /* Open the fullscreen window, already with the correct pixmap in place */
-    win = open_fullscreen_window(conn, screen, color, bg_pixmap);
+    win = open_fullscreen_window(conn, screen, configuration.color, bg_pixmap);
     xcb_free_pixmap(conn, bg_pixmap);
 
-    cursor = create_cursor(conn, screen, win, curs_choice);
+    cursor = create_cursor(conn, screen, win, configuration.curs_choice);
 
     /* Display the "locking…" message while trying to grab the pointer/keyboard. */
     pam_state = STATE_PAM_LOCK;
