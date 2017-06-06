@@ -849,7 +849,7 @@ int main(int argc, char *argv[]) {
 
     char *optstring = "hvnbdc:o:w:l:p:ui:teI:f4C:";
 
-    /*if (parse_config("/etc/i3lock.conf")) {
+    if (parse_config("/etc/i3lock.conf")) {
       return -1;
     }
     if (parse_config("~/.i3lock.conf")) {
@@ -857,7 +857,7 @@ int main(int argc, char *argv[]) {
     }
     if (parse_config("~/.config/i3lock.conf")) {
       return -1;
-    }*/
+    }
     
     while ((o = getopt_long(argc, argv, optstring, longopts, &optind)) != -1) {
         switch (o) {
