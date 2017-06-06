@@ -12,6 +12,7 @@
 #include "i3lock_config.h"
 #include "util.h"
 
+/* Length of the key -> setter function array */
 #define VALID_KEYS_LEN 14
 
 const int CMD_KEY_SHIFT = 1;
@@ -35,6 +36,10 @@ struct config configuration = {
   .use24hour = false,
   .commands = NULL
 };
+
+/*
+ *  Setters for the single config values
+ */
 
 static int set_dont_fork(char* val) {
   if (!strcmp("true", val)) {
@@ -153,12 +158,15 @@ static int append_command(char* val) {
   char *cmd;
   int mod = 0;
   xkb_keysym_t ksym;
+  /* Separate key combination and command to execute */
   char* keys_untr = strtok(val, "=");
   keys = trim(keys_untr);
   char* cmd_untr = strtok(NULL, "");
   cmd = trim(cmd_untr);
+  /* Decompose key combination into single keys */
   key = strtok(keys, "+");
   while (key) {
+    /* If the key is a modifier, set the appropriate flag */
     if (!strcmp("ctrl", key)) {
       mod |= CMD_KEY_CTRL;
     } else if (!strcmp("alt", key)) {
@@ -168,11 +176,13 @@ static int append_command(char* val) {
     } else if (!strcmp("shift", key)) {
       mod |= CMD_KEY_SHIFT;
     } else {
+      /* Convert the key name into a XKB keysym and check whether it actually exists */
       ksym = xkb_keysym_from_name(key, 0);
       if (ksym == XKB_KEY_NoSymbol) {
         fprintf(stderr, "Unknown value: `%s`\n", key);
         return 1;
       }
+      /* Prepend a new entry to the configuration's command list */
       struct cmdlist *item = (struct cmdlist*) malloc(sizeof(struct cmdlist));
       item->mods = mod;
       item->ksym = ksym;
@@ -180,11 +190,16 @@ static int append_command(char* val) {
       strcpy(item->command, cmd);
       item->next = configuration.commands;
       configuration.commands = item;
+      /* Try to get one more key for error checking */
       key = strtok(NULL, "+");
       break;
     }
     key = strtok(NULL, "+");
   }
+  /*
+   * If a non-modifier key was encountered and there are still other keys,
+   * assume an error in the config.
+   */
   if (key) {
     fprintf(stderr, "Invalid key combination token: `%s`\n", key);
     return 1;
@@ -192,6 +207,10 @@ static int append_command(char* val) {
   return 0;
 }
 
+/*
+ *  Array of valid config file keys with a pointer to the corresponding
+ *  setter function.
+ */
 struct {
   const char *key;
   int (*setter) (char*);
@@ -214,24 +233,32 @@ struct {
 
 
 int parse_config(char* filename) {
+  /* Expand file name (e.g. `~` -> `/home/username`) and open file */
   char *fexp = expand_path(filename);
   errno = 0;
   FILE *conffile = fopen(fexp, "r");
   if (!conffile) {
     return errno;
   }
-  
+  /* Read line after line */
   char *linebuf = (char*) malloc(sizeof(char)*4096);
   for (int lc = 1; fgets(linebuf, 4096, conffile); ++lc) {
+    /* Extract option key and value */
     char *untr_key = strdup(strtok(linebuf, "="));
     char *key = trim(untr_key);
     if (key == NULL || strlen(key) == 0 || key[0] == '#') {
+      /* Skip, if the line is empty or a comment (starts with #) */
       continue;
     }
     char *untr_val = strdup(strtok(NULL, ""));
     char *val = trim(untr_val);
     free(untr_key);
     free(untr_val);
+    /* 
+     * Search a matching key in the list of valid keys and call the
+     * corresponding setter. If an invalid key or value is found, print
+     * an error, but ignore it, as we want to lock the screen after all.
+     */
     bool valid_key = false;
     for (int i = 0; i < VALID_KEYS_LEN; ++i) {
       if (!strcmp(valid_keys[i].key, key)) {
@@ -247,7 +274,7 @@ int parse_config(char* filename) {
     free(key);
     free(val);
   }
-
+  
   fclose(conffile);
   free(linebuf);
   return 0;

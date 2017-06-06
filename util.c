@@ -23,10 +23,13 @@ int verify_hex(const char *arg, char *colortype, char *varname) {
 
 char* expand_path(char* path) {
   wordexp_t we;
+  /* Expand tokens like ~ to a full path */
   wordexp(path, &we, 0);
   if (we.we_wordc < 1) {
+    /* Return the original string, if expansion failed */
     return path;
   }
+  /* Return the expanded path */
   char *heapcopy = strdup(we.we_wordv[0]);
   wordfree(&we);
   return heapcopy;
@@ -45,12 +48,14 @@ char* trim(const char* str) {
       break;
     }
   }
+  /* Find right trimming offset */
   for (; right > left; --right) {
     if (str[right] != ' ' && str[right] != '\n' && str[right] != '\r' &&
         str[right] != '\t' && str[right] != '\f') {
       break;
     }
   }
+  /* Return the trimmed substring */
   return strndup(str+left, right-left+1);
 }
 

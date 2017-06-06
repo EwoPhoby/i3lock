@@ -6,6 +6,7 @@
 
 #include "cursors.h"
 
+/* Linked list element for a key -> command binding */
 struct cmdlist {
   int mods;
   xkb_keysym_t ksym;
@@ -13,6 +14,7 @@ struct cmdlist {
   struct cmdlist *next;
 };
 
+/* struct to organize everything that can be configured in config files */
 struct config {
   bool dont_fork;
   bool beep;
@@ -30,6 +32,6 @@ struct config {
   struct cmdlist *commands;
 };
 
-extern int parse_config(char* filename);
+int parse_config(char* filename);
 
 #endif /* _I3LOCK_CONFIG_H_ */

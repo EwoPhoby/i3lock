@@ -378,10 +378,12 @@ static void handle_key_press(xcb_key_press_event_t *event) {
     ksym = xkb_state_key_get_one_sym(xkb_state, event->detail);
     xkb_keysym_get_name(ksym, keyname, 128);
     real_ksym = xkb_keysym_from_name(keyname, 0);
+    /* Get state of each modifier key */
     ctrl = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_DEPRESSED);
     alt = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_ALT, XKB_STATE_MODS_DEPRESSED);
     super = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_DEPRESSED);
     shift = xkb_state_mod_name_is_active(xkb_state, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_DEPRESSED);
+    /* Combine modifier key states as flags */
     mods = (ctrl * CMD_KEY_CTRL) | (alt * CMD_KEY_ALT) | (super * CMD_KEY_SUPER) | (shift * CMD_KEY_SHIFT);
 
     /* The buffer will be null-terminated, so n >= 2 for 1 actual character. */
@@ -405,9 +407,11 @@ static void handle_key_press(xcb_key_press_event_t *event) {
                 return;
         }
     }
-    
+
+    /* Search for a command to execute for the entered key combo */
     char* cmd = find_command(mods, real_ksym);
     if (cmd) {
+      /* If one was found, execute the command in a new process */
       if (!fork()) {
         system(cmd);
         exit(EXIT_SUCCESS);
