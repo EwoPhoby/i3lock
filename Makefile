@@ -1,7 +1,7 @@
 TOPDIR=$(shell pwd)
 
 INSTALL=install
-PREFIX=/usr
+PREFIX=/usr/local
 SYSCONFDIR=/etc
 PKG_CONFIG=pkg-config
 
