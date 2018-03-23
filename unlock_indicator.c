@@ -16,6 +16,7 @@
 #include <cairo.h>
 #include <cairo/cairo-xcb.h>
 #include <time.h>
+#include <signal.h>
 
 #include "i3lock.h"
 #include "i3lock_config.h"
@@ -359,6 +360,12 @@ static void time_redraw_cb(struct ev_loop *loop, ev_periodic *w, int revents) {
     redraw_screen();
 }
 
+void redraw_screen_signal(int signum) {
+  if (signum == SIGUSR1) {
+    redraw_screen();
+  }
+}
+
 void start_time_redraw_tick(struct ev_loop* main_loop) {
     if (time_redraw_tick) {
         ev_periodic_set(time_redraw_tick, 1.0, 60., 0);
@@ -371,4 +378,5 @@ void start_time_redraw_tick(struct ev_loop* main_loop) {
         ev_periodic_init(time_redraw_tick,time_redraw_cb, 1.0, 60., 0);
         ev_periodic_start(main_loop, time_redraw_tick);
     }
+    signal(SIGUSR1, redraw_screen_signal);
 }

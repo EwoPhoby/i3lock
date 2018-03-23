@@ -147,6 +147,14 @@ use a wrapper script around i3lock like the following:
 
 The \-I (-\-inactivity-timeout=seconds) was removed because it only makes sense with DPMS.
 
+.SH SIGNALS
+
+Send SIGUSR1 to the main process to redraw the screen, e.g. to update the displayed time directly after resume:
+
+.Vb 6
+\&      pkill -USR1 i3lock
+.Ve
+
 .SH SEE ALSO
 .IR xautolock(1)
 \- use i3lock as your screen saver
@@ -155,3 +163,7 @@ The \-I (-\-inactivity-timeout=seconds) was removed because it only makes sense 
 Michael Stapelberg <michael+i3lock at stapelberg dot de>
 
 Jan-Erik Rediger <badboy at archlinux.us>
+
+.SH CONTRIBUTORS
+
+s3lph <5564491+s3lph at users.noreply.github.com>

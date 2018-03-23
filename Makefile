@@ -1,8 +1,10 @@
 TOPDIR=$(shell pwd)
 
 INSTALL=install
+GZ=gzip
+
 PREFIX=/usr/local
-SYSCONFDIR=/etc
+SYSCONFDIR=/usr/local/etc
 PKG_CONFIG=pkg-config
 
 # Check if pkg-config is installed, we need it for building CFLAGS/LIBS
@@ -39,18 +41,23 @@ all: i3lock
 
 i3lock: ${FILES}
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+	$(GZ) -c i3lock.1 > i3lock.1.gz
 
 clean:
-	rm -f i3lock ${FILES} i3lock-${VERSION}.tar.gz
+	rm -f i3lock i3lock.1.gz ${FILES} i3lock-${VERSION}.tar.gz
 
 install: all
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -d $(DESTDIR)$(SYSCONFDIR)/pam.d
+	$(INSTALL) -d $(DESTDIR)$(PREFIX)/share/man/man1
 	$(INSTALL) -m 755 i3lock $(DESTDIR)$(PREFIX)/bin/i3lock
 	$(INSTALL) -m 644 i3lock.pam $(DESTDIR)$(SYSCONFDIR)/pam.d/i3lock
+	$(INSTALL) -m 644 i3lock.1.gz $(DESTDIR)$(PREFIX)/share/man/man1/i3lock.1.gz
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/i3lock
+	rf -f $(DESTDIR)$(PREFIX)/share/man1/i3lock.1.gz
+	rm -f $(DESTDIR)$(SYSCONFDIR)/pam.d/i3lock
 
 dist: clean
 	[ ! -d i3lock-${VERSION} ] || rm -rf i3lock-${VERSION}
