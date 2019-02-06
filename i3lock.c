@@ -841,7 +841,8 @@ int main(int argc, char *argv[]) {
         {"verify-color", required_argument, NULL, 'o'},
         {"wrong-color", required_argument, NULL, 'w'},
         {"idle-color", required_argument, NULL, 'l'},
-        {"24", no_argument, NULL, '4'},
+        {"time-format", required_argument, NULL, 10001},
+        {"date-format", required_argument, NULL, 10002},
         {"config", required_argument, NULL, 'C'},
         {NULL, no_argument, NULL, 0}
     };
@@ -886,9 +887,6 @@ int main(int argc, char *argv[]) {
         case 'l':
             verify_hex(optarg, configuration.idlecolor, "idlecolor");
             break;
-        case '4':
-            configuration.use24hour = true;
-            break;
         case 'u':
             configuration.unlock_indicator = false;
             break;
@@ -920,9 +918,19 @@ int main(int argc, char *argv[]) {
         case 'C':
             parse_config(optarg);
             break;
+        case 10001:  // time-format
+            if (set_fstring(optarg, 0)) {
+                errx(EXIT_FAILURE, "i3lock: Invalid time format given. See strftime(3) for valid format.\n");
+            }
+            break;
+        case 10002:  // date-format
+            if (set_fstring(optarg, 1)) {
+                errx(EXIT_FAILURE, "i3lock: Invalid date format given. See strftime(3) for valid format.\n");
+            }
+            break;
         default:
             errx(EXIT_FAILURE, "Syntax: i3lock [-v] [-n] [-b] [-d] [-c color] [-o color] [-w color] [-l color] [-u] [-p win|default]"
-            " [-i image.png] [-t] [-e] [-I] [-f] [--24]"
+            " [-i image.png] [-t] [-e] [-I] [-f] [--time-format format] [--date-format format]"
             );
         }
     }

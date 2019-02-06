@@ -29,9 +29,13 @@ struct config {
   bool ignore_empty_password;
   bool show_failed_attempts;
   bool use24hour;
+  char tfstring[100];
+  char dfstring[100];
   struct cmdlist *commands;
 };
 
 int parse_config(char* filename);
+
+int set_fstring(char* val, int is_date);
 
 #endif /* _I3LOCK_CONFIG_H_ */

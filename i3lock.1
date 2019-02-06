@@ -117,12 +117,20 @@ Show the number of failed attempts, if any.
 Show the number of failed attempts, if any.
 
 .TP
-.B \-4, \-\-24
-Uses 24h clock.
+.B \-\-time-format=format
+Use the given format string to format the displayed time. See
+.B strftime(3)
+for details on the format string.
+
+.TP
+.B \-\-date-format=format
+Use the given format string to format the displayed date. See
+.B strftime(3)
+for details on the format string.
 
 .TP
 .BI \-C\  i3lock.conf \fR,\ \fB\-\-config= i3lock.conf
-Loads configuration from the given file
+Loads configuration from the given file.
 
 .SH DPMS
 

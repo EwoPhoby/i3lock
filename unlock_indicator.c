@@ -28,8 +28,6 @@
 #define BUTTON_SPACE (BUTTON_RADIUS + 5)
 #define BUTTON_CENTER (BUTTON_RADIUS + 5)
 #define BUTTON_DIAMETER (2 * BUTTON_SPACE)
-#define TIME_FORMAT_12 "%l:%M %p"
-#define TIME_FORMAT_24 "%k:%M"
 
 /*******************************************************************************
  * Variables defined in i3lock.c.
@@ -221,14 +219,13 @@ xcb_pixmap_t draw_image(uint32_t *resolution) {
         cairo_stroke(ctx);
 
         /* Display (centered) Time */
-        char *timetext = malloc(6);
+        char *timetext = malloc(100);
+        char *datetext = malloc(100);
 
         time_t curtime = time(NULL);
         struct tm *tm = localtime(&curtime);
-        if (configuration.use24hour)
-            strftime(timetext, 100, TIME_FORMAT_24, tm);
-        else
-            strftime(timetext, 100, TIME_FORMAT_12, tm);
+        strftime(timetext, 100, configuration.tfstring, tm);
+        strftime(datetext, 100, configuration.dfstring, tm);
 
         /* Text */
         set_pam_color('l');
@@ -247,20 +244,23 @@ xcb_pixmap_t draw_image(uint32_t *resolution) {
 
         free(timetext);
 
-        if (pam_state == STATE_PAM_WRONG && (modifier_string != NULL)) {
-            cairo_text_extents_t extents;
-            double x, y;
-
-            cairo_set_font_size(ctx, 14.0);
-
-            cairo_text_extents(ctx, modifier_string, &extents);
-            x = BUTTON_CENTER - ((extents.width / 2) + extents.x_bearing);
-            y = BUTTON_CENTER - ((extents.height / 2) + extents.y_bearing) + 28.0;
-
-            cairo_move_to(ctx, x, y);
-            cairo_show_text(ctx, modifier_string);
-            cairo_close_path(ctx);
+        if (pam_state == STATE_PAM_WRONG && modifier_string != NULL) {
+            strncpy(datetext, modifier_string, 100);
         }
+        cairo_text_extents_t extents;
+        double x, y;
+
+        cairo_set_font_size(ctx, 14.0);
+
+        cairo_text_extents(ctx, datetext, &extents);
+        x = BUTTON_CENTER - ((extents.width / 2) + extents.x_bearing);
+        y = BUTTON_CENTER - ((extents.height / 2) + extents.y_bearing) + 28.0;
+
+        cairo_move_to(ctx, x, y);
+        cairo_show_text(ctx, datetext);
+        cairo_close_path(ctx);
+
+        free(datetext);
 
         /* After the user pressed any valid key or the backspace key, we
          * highlight a random part of the unlock indicator to confirm this

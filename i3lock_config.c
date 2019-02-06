@@ -7,13 +7,14 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <xkbcommon/xkbcommon.h>
+#include <time.h>
 
 #include "cursors.h"
 #include "i3lock_config.h"
 #include "util.h"
 
 /* Length of the key -> setter function array */
-#define VALID_KEYS_LEN 14
+#define VALID_KEYS_LEN 15
 
 const int CMD_KEY_SHIFT = 1;
 const int CMD_KEY_CTRL = 2;
@@ -33,7 +34,8 @@ struct config configuration = {
   .tiling = false,
   .ignore_empty_password = false,
   .show_failed_attempts = false,
-  .use24hour = false,
+  .tfstring = "%l:%M %p",
+  .dfstring = "",
   .commands = NULL
 };
 
@@ -141,15 +143,36 @@ static int set_show_failed_attempts(char* val) {
   return 0;
 }
 
-static int set_hourformat(char* val) {
-  if (!strcmp("24", val)) {
-    configuration.use24hour = true;
-  } else if (!strcmp("12", val)) {
-    configuration.use24hour = false;
+int set_fstring(char* val, int is_date) {
+  size_t testlen;
+  char testout[100];
+  time_t rawtime;
+  struct tm *tm;
+  if (strlen(val) == 0) {
+    return 0;
+  }
+  time(&rawtime);
+  tm = localtime(&rawtime);
+  testlen = strftime(testout, sizeof(testout), val, tm);
+  /* May yield some false negatives, but still better than passing buffers with
+     undefined content to Xlib... */
+  if (testlen == 0UL) {
+    return 1;
+  }
+  if (is_date) {
+    strncpy(configuration.dfstring, val, sizeof(configuration.dfstring));
   } else {
-    return EINVAL;
+    strncpy(configuration.tfstring, val, sizeof(configuration.tfstring));
   }
   return 0;
+}
+
+static int set_tfstring(char *val) {
+  return set_fstring(val, 0);
+}
+
+static int set_dfstring(char *val) {
+  return set_fstring(val, 1);
 }
 
 static int append_command(char* val) {
@@ -227,7 +250,8 @@ struct {
   { .key = "ignore-empty-password", .setter = set_ignore_empty_password },
   { .key = "unlock-indicator", .setter = set_show_unlock_indicator },
   { .key = "show-failed-attempts", .setter = set_show_failed_attempts },
-  { .key = "hourformat", .setter = set_hourformat },
+  { .key = "time-format", .setter = set_tfstring },
+  { .key = "date-format", .setter = set_dfstring },
   { .key = "command", .setter = append_command }
 };
 
