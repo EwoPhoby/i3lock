@@ -841,6 +841,7 @@ int main(int argc, char *argv[]) {
         {"verify-color", required_argument, NULL, 'o'},
         {"wrong-color", required_argument, NULL, 'w'},
         {"idle-color", required_argument, NULL, 'l'},
+        {"circle-alpha", required_argument, NULL, 'a'},
         {"time-format", required_argument, NULL, 10001},
         {"date-format", required_argument, NULL, 10002},
         {"config", required_argument, NULL, 'C'},
@@ -852,7 +853,7 @@ int main(int argc, char *argv[]) {
     if ((username = pw->pw_name) == NULL)
         errx(EXIT_FAILURE, "pw->pw_name is NULL.\n");
 
-    char *optstring = "hvnbdc:o:w:l:p:ui:teI:f4C:";
+    char *optstring = "hvnbdc:o:w:l:a:p:ui:teI:f4C:";
 
     parse_config("/etc/i3lock.conf");
     parse_config("~/.i3lock.conf");
@@ -886,6 +887,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'l':
             verify_hex(optarg, configuration.idlecolor, "idlecolor");
+            break;
+        case 'a':
+            set_circle_alpha(optarg);
             break;
         case 'u':
             configuration.unlock_indicator = false;

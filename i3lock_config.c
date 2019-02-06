@@ -14,7 +14,7 @@
 #include "util.h"
 
 /* Length of the key -> setter function array */
-#define VALID_KEYS_LEN 15
+#define VALID_KEYS_LEN 16
 
 const int CMD_KEY_SHIFT = 1;
 const int CMD_KEY_CTRL = 2;
@@ -28,6 +28,7 @@ struct config configuration = {
   .verifycolor = "00ff00",
   .wrongcolor = "ff0000",
   .idlecolor = "000000",
+  .circle_alpha = 20,
   .curs_choice = CURS_NONE,
   .unlock_indicator = true,
   .image_path = NULL,
@@ -79,6 +80,19 @@ static int set_wrong_color(char* val) {
 
 static int set_idle_color(char* val) {
   return verify_hex(val, configuration.idlecolor, "idlecolor");
+}
+
+int set_circle_alpha(char* val) {
+  errno = 0;
+  long la = strtol(val, NULL, 10);
+  if (errno) {
+    return 1;
+  }
+  if (la < 0 || la > 100) {
+    return 1;
+  }
+  configuration.circle_alpha = (int) la;
+  return 0;
 }
 
 static int set_pointer(char* val) {
@@ -244,6 +258,7 @@ struct {
   { .key = "verify-color", .setter = set_verify_color },
   { .key = "wrong-color", .setter = set_wrong_color },
   { .key = "idle-color", .setter = set_idle_color },
+  { .key = "circle-alpha", .setter = set_circle_alpha },
   { .key = "pointer", .setter = set_pointer },
   { .key = "image", .setter = set_image },
   { .key = "tiling", .setter = set_image_tiling },

@@ -22,6 +22,7 @@ struct config {
   char verifycolor[7];
   char wrongcolor[7];
   char idlecolor[7];
+  int circle_alpha;
   int curs_choice;
   bool unlock_indicator;
   char *image_path;
@@ -37,5 +38,7 @@ struct config {
 int parse_config(char* filename);
 
 int set_fstring(char* val, int is_date);
+
+int set_circle_alpha(char* val);
 
 #endif /* _I3LOCK_CONFIG_H_ */
