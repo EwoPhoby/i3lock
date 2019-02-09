@@ -1,6 +1,45 @@
 i3lock
 ======
 
+This is a fork of [lixxia/i3lock](https://github.com/lixia/i3lock), adding the following features:
+
+- Configuration file, reducing the need for overly long i3lock command lines.
+- Keybindings to run custom commands even when the screen is locked, e.g. for music playback control.
+- Customizable (see `man 3 strftime`) format for the clock in the unlock indicator.
+  - Second line (the one that shows hints like `Caps Lock` when mistyping the password) usable for e.g. date display.
+- Customizable alpha channel of the unlock indicator background.
+- Redraw the screen on `SIGUSR1`, useful to immediately update the clock after resuming from suspend.
+
+## Example config file
+
+~/.config/i3lock.conf:
+```
+color = #101010
+verify-color = #00dd00
+wrong-color = #dd0000
+idle-color = #aaaaaa
+circle-alpha = 0
+# Supported values: default, win, none
+pointer = win
+time-format = %H:%M
+date-format = %d.%m.%Y
+unlock-indicator = true
+ignore-empty-password = true
+image=~/.wallpaper.png
+
+# The commands on the right will be run in a forked shell when the key
+command = XF86AudioPlay = playerctl play-pause
+command = XF86AudioPrev = playerctl previous
+command = XF86AudioNext = playerctl next
+# You can basically execute everything. Just make sure it doesn't kill i3lock :)
+command = super+alt+r = ~/.local/bin/remove-current-track.sh
+```
+
+### Lixxia/i3lock README
+
+i3lock
+======
+
 This is my own copy of i3lock, consisting of the following tweaks: 
 - Display changes on key-strokes and escape/backspace.
 - Added 12-hour clock to the unlock indicator and periodic updater so time stays relevant. 
