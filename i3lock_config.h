@@ -35,6 +35,8 @@ struct config {
   struct cmdlist *commands;
 };
 
+struct config configuration;
+
 int parse_config(char* filename);
 
 int set_fstring(char* val, int is_date);
