@@ -97,11 +97,11 @@ int set_circle_alpha(char* val) {
 
 static int set_pointer(char* val) {
   if (!strcmp("none", val)) {
-    configuration.beep = CURS_NONE;
+    configuration.curs_choice = CURS_NONE;
   } else if (!strcmp("default", val)) {
-    configuration.beep = CURS_DEFAULT;
+    configuration.curs_choice = CURS_DEFAULT;
   } else if (!strcmp("win", val)) {
-    configuration.beep = CURS_WIN;
+    configuration.curs_choice = CURS_WIN;
   } else {
     return EINVAL;
   }
