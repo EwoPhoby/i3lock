@@ -35,10 +35,11 @@ command = XF86AudioNext = playerctl next
 command = super+alt+r = ~/.local/bin/remove-current-track.sh
 ```
 
-### Lixxia/i3lock README
+## Screenshots
 
-i3lock
-======
+![Idle state](/images/forest.png?raw=true "")
+
+# Lixxia/i3lock README
 
 This is my own copy of i3lock, consisting of the following tweaks: 
 - Display changes on key-strokes and escape/backspace.
