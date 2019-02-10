@@ -117,16 +117,21 @@ Show the number of failed attempts, if any.
 Show the number of failed attempts, if any.
 
 .TP
-.B \-\-time-format=format
+.B \-\-time-format= format
 Use the given format string to format the displayed time. See
 .B strftime(3)
 for details on the format string.
 
 .TP
-.B \-\-date-format=format
+.B \-\-date-format= format
 Use the given format string to format the displayed date. See
 .B strftime(3)
 for details on the format string.
+
+.TP
+.B \-a, \-\-circle-alpha= alpha
+Set the opacity of the unlock indicator background.  Takes a number between
+0 (completely transparent) and 100 (completely opaque).
 
 .TP
 .BI \-C\  i3lock.conf \fR,\ \fB\-\-config= i3lock.conf
@@ -162,6 +167,80 @@ Send SIGUSR1 to the main process to redraw the screen, e.g. to update the displa
 .Vb 6
 \&      pkill -USR1 i3lock
 .Ve
+
+.SH FILES
+.TP
+.B /etc/i3lock.conf
+System-wide configuration file.
+.TP
+.BR ~/.i3lock.conf " or " ~/.config/i3lock.conf
+Per-user configuration file.
+
+.PP
+\fBSample configuration\fR. 
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+#
+# i3lock configuration file
+#
+
+# Background color as RGB hex string.
+\fBcolor\fR = \fI#101010\fR
+# Path to the background image, PNG only.
+\fBimage\fR = \fI~/.local/wallpaper.png\fR
+# Whether the image should be tiling.
+\fBtiling\fR = \fIfalse\fR
+# Color of the unlock indicator when verifying the password.
+\fBverify-color\fR = \fI#00dd00\fR
+# Color of the unlock indicator when a wrong password was entered.
+\fBwrong-color\fR = \fI#dd0000\fR
+# Color of the unlock indicator when idle.
+\fBidle-color\fR = \fI#dddddd\fR
+# Opacity of the unlock indicator, in percent.
+\fBcircle-alpha\fR = \fI20\fR
+# Supported values: default, win, none.
+\fBpointer\fR = \fInone\fR
+
+# Time format according to strftime(3).
+# Time is displayed in the center of the unlock indicator.
+\fBtime-format\fR = \fI%H:%M\fR
+# Date format according to strftime(3).
+# Date is displayed in smaller script beneath the time.
+\fBdate-format\fR = \fI%d.%m.%Y\fR
+
+# Whether to ever show the unlock indicator.
+\fBunlock-indicator\fR = \fItrue\fR
+# Whether to ingore the return key when nothing was typed.
+\fBignore-empty-password\fR = \fItrue\fR
+# Whether to show the number of failed attempts.
+\fBshow-failed-attempts\fR = \fIfalse\fR
+
+# Whether not to fork, useful for debugging.
+\fBnofork\fR = \fIfalse\fR
+# Whether to beep. Warning, may annoy others!
+\fBfork\fR = \fIfalse\fR
+
+#
+# This version of i3lock supports custom keybindings on the lockscreen.
+# Configure them here using the following syntax:
+#
+#    command = <modifier>+<key> = <command to run>
+#
+
+# Some example commands
+\fBcommand\fR = \fIXF86AudioPlay\fR = playerctl play-pause
+\fBcommand\fR = \fIXF86AudioPlay\fR = playerctl next
+\fBcommand\fR = \fIXF86AudioPlay\fR = playerctl prev
+\fBcommand\fR = \fIsuper+up\fR = brightnessctl +5%
+\fBcommand\fR = \fIsuper+down\fR = brightnessctl -5%
+.fi
+.if n \{\
+.RE
+.\}
+.sp
 
 .SH SEE ALSO
 .IR xautolock(1)
