@@ -67,6 +67,9 @@ extern const int CMD_KEY_SUPER;
 
 extern struct config configuration;
 
+extern Rect *xr_resolutions;
+extern int xr_screens;
+
 bool skip_repeated_empty_password = true;
 int inactivity_timeout = 30;
 uint32_t last_resolution[2];
@@ -99,6 +102,7 @@ static uint8_t xkb_base_error;
 static int randr_base = -1;
 
 cairo_surface_t *img = NULL;
+cairo_surface_t *bg = NULL;
 
 /* isutf, u8_dec © 2005 Jeff Bezanson, public domain */
 #define isutf(c) (((c)&0xC0) != 0x80)
@@ -639,6 +643,48 @@ static void process_xkb_event(xcb_generic_event_t *gevent) {
     }
 }
 
+
+static uint8_t setup_background_image() {
+    if (!bg) {
+        // Background image not loaded yet
+        return 1;
+    }
+    if (img) {
+         cairo_surface_destroy(img);
+    }
+    img = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, screen->width_in_pixels, screen->height_in_pixels);
+    if (!img) {
+        return 1;
+    }
+    if (cairo_surface_status(img) != CAIRO_STATUS_SUCCESS) {
+        fprintf(stderr, "Could not instantiate background image buffer: %s\n",
+                cairo_status_to_string(cairo_surface_status(img)));
+        cairo_surface_destroy(img);
+        img = NULL;
+        return 1;
+    }
+    cairo_t *ctx = cairo_create(img);
+    for (int i = 0; i < xr_screens; ++i) {
+        // Draw the background image on each screen individually, scaled according do the screen dimensions
+        float dx = 1.0f * xr_resolutions[i].width / cairo_image_surface_get_width(bg);
+        float dy = 1.0f * xr_resolutions[i].height / cairo_image_surface_get_height(bg);
+        float scale = dx > dy ? dx : dy;
+        cairo_identity_matrix(ctx);
+        cairo_scale(ctx, scale, scale);
+        cairo_set_source_surface(ctx, bg, xr_resolutions[i].x / scale, xr_resolutions[i].y / scale);
+        cairo_rectangle(ctx,
+                        xr_resolutions[i].x / scale,
+                        xr_resolutions[i].y / scale,
+                        xr_resolutions[i].width / scale,
+                        xr_resolutions[i].height / scale);
+        cairo_fill(ctx);
+    }
+    cairo_destroy(ctx);
+    ctx = NULL;
+    return 0;
+}
+
+
 /*
  * Called when the properties on the root window change, e.g. when the screen
  * resolution changes. If so we update the window to cover the whole screen
@@ -670,6 +716,7 @@ void handle_screen_resize(void) {
     xcb_flush(conn);
 
     randr_query(screen->root);
+    setup_background_image();
     redraw_screen();
 }
 
@@ -1114,14 +1161,21 @@ int main(int argc, char *argv[]) {
         /* expandedfilename */
         char *exp_result = expand_path(configuration.image_path);
         if (verify_png_image(exp_result)) {
-            /* Create a pixmap to render on, fill it with the background color */
-            img = cairo_image_surface_create_from_png(exp_result);
-            /* In case loading failed, we just pretend no -i was specified. */
-            if (cairo_surface_status(img) != CAIRO_STATUS_SUCCESS) {
-                fprintf(stderr, "Could not load image \"%s\": %s\n",
-                        configuration.image_path, cairo_status_to_string(cairo_surface_status(img)));
-                img = NULL;
+            bg = cairo_image_surface_create_from_png(exp_result);
+            if (!bg) {
+                cairo_surface_destroy(img);
+                 img = NULL;
+                return 1;
             }
+            if (cairo_surface_status(bg) != CAIRO_STATUS_SUCCESS) {
+                fprintf(stderr, "Could not load image \"%s\": %s\n",
+                        configuration.image_path, cairo_status_to_string(cairo_surface_status(bg)));
+                cairo_surface_destroy(img);
+                img = NULL;
+                cairo_surface_destroy(bg);
+                bg = NULL;
+            }
+            setup_background_image();
         }
         free(exp_result);
     }
